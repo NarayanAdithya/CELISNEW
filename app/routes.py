@@ -10,7 +10,8 @@ from datetime import datetime
 import pickle
 from flask_mail import Message
 from threading import Thread
-
+import pandas as pd
+import numpy as np
 
 @app.route('/')
 @app.route('/index')
@@ -127,6 +128,45 @@ def course():
     with open('app//webdev.pickle', 'rb') as handle:
         webdev_courses = pickle.load(handle)
     return render_template('courses.html',title='Courses',courses=c,ai=ai_courses,len_ai=len(ai_courses['Title']),web=webdev_courses,len_web=len(webdev_courses['Title']),app=appdev_courses,len_app=len(appdev_courses['Reviews']))
+
+
+@app.route('/recommend',methods=['POST','GET'])
+def recommend():
+    df=pd.read_csv('app//tag_gen.csv')
+    if request.method=='POST':
+        user_courses=[]
+        course1=request.form['course1']
+        user_courses.append(course1)
+        course2=request.form['course2']
+        user_courses.append(course2)
+        course3=request.form['course3']
+        user_courses.append(course3)
+        print(course1,course2,course3)
+        df['tags_str'] = [','.join(map(str, l)) for l in df['Tags_fin']]
+        course_tags_list=df[['Title','tags_str','Tags_fin']].copy()
+        model=pickle.load(open('app//recommender_model','rb'))
+        course_tags_vectors = model.docvecs.vectors_docs
+        user_course_vector = np.zeros(shape = course_tags_vectors.shape[1])
+        for course in user_courses:
+            course_index = df[df["Title"] == course].index.values[0]  
+            user_course_vector += course_tags_vectors[course_index]
+        user_course_vector /= len(user_courses)  
+        # print(user_course_vector)
+        #  find courses similar to user vector to generate course recommendations
+        sims = model.docvecs.most_similar(positive = [user_course_vector], topn = 30)
+        nu=[]
+        for i,j in sims:
+            print(i,j)
+            course_sim = course_tags_list.loc[int(i),'Title'].strip()
+            
+            if course_sim not in user_courses:
+                nu.append(int(i))
+                print(course_sim)
+        return render_template('recommender.html',options=df,indices=nu)
+
+    return render_template('recommender.html',options=df)
+    
+
 
 @app.route('/profile/<username>')
 @login_required
